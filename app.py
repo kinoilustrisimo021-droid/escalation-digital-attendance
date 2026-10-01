@@ -388,6 +388,28 @@ st.markdown(
             background: rgba(255, 255, 255, .58);
         }
 
+        .member-heading {
+            margin: 1.6rem 0 .2rem;
+            color: var(--ink);
+            font-family: "Manrope", sans-serif;
+            font-size: 1.08rem;
+            font-weight: 800;
+            letter-spacing: -.02em;
+        }
+
+        .member-copy {
+            margin: 0 0 .75rem;
+            color: var(--muted);
+            font-size: .84rem;
+        }
+
+        [data-testid="stDataFrame"] {
+            overflow: hidden;
+            border: 1px solid rgba(91, 91, 214, .12);
+            border-radius: 15px;
+            box-shadow: 0 12px 30px rgba(50, 59, 90, .07);
+        }
+
         .privacy-note {
             margin-top: 1.2rem;
             text-align: center;
@@ -514,6 +536,37 @@ if st.session_state.show_summary:
         for status_name in STATUSES
     }
 
+    member_counts: dict[str, dict[str, int]] = {}
+    for record in monthly_records:
+        full_name = record.get("full_name", "").strip()
+        if not full_name:
+            full_name = " ".join(
+                part.strip()
+                for part in (record.get("first_name", ""), record.get("last_name", ""))
+                if part.strip()
+            )
+        full_name = " ".join(full_name.split()).upper()
+        if not full_name:
+            continue
+
+        if full_name not in member_counts:
+            member_counts[full_name] = {status_name: 0 for status_name in STATUSES}
+        member_counts[full_name][record["status"]] += 1
+
+    member_summary = []
+    for full_name in sorted(member_counts):
+        counts = member_counts[full_name]
+        member_summary.append(
+            {
+                "Full Name": full_name,
+                "Ontime": counts["Ontime"],
+                "Late": counts["Late"],
+                "Halfday": counts["Halfday"],
+                "Absent": counts["Absent"],
+                "Total": sum(counts.values()),
+            }
+        )
+
     st.markdown(
         f"""
         <div class="summary-grid">
@@ -547,7 +600,29 @@ if st.session_state.show_summary:
         unsafe_allow_html=True,
     )
 
-    if not monthly_records:
+    if monthly_records:
+        st.markdown(
+            """
+            <h3 class="member-heading">Summary by team member</h3>
+            <p class="member-copy">Attendance totals for each name during the selected month.</p>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.dataframe(
+            member_summary,
+            column_order=("Full Name", "Ontime", "Late", "Halfday", "Absent", "Total"),
+            column_config={
+                "Full Name": st.column_config.TextColumn("Full Name", width="large"),
+                "Ontime": st.column_config.NumberColumn("Ontime", width="small"),
+                "Late": st.column_config.NumberColumn("Late", width="small"),
+                "Halfday": st.column_config.NumberColumn("Halfday", width="small"),
+                "Absent": st.column_config.NumberColumn("Absent", width="small"),
+                "Total": st.column_config.NumberColumn("Total", width="small"),
+            },
+            hide_index=True,
+            use_container_width=True,
+        )
+    else:
         st.info("No attendance has been submitted for this month yet.")
 
 
