@@ -12,6 +12,7 @@ TEAM_NAME = "Escalation & Digital"
 TIMEZONE = ZoneInfo("Asia/Singapore")
 DATA_FILE = Path(__file__).with_name("attendance_records.csv")
 STATUSES = ("Ontime", "Late", "Halfday", "Absent")
+STATUS_ALIASES = {"On time": "Ontime", "Half day": "Halfday"}
 
 
 st.set_page_config(
@@ -41,6 +42,31 @@ def save_attendance(date_value: str, first_name: str, last_name: str, status: st
                 datetime.now(TIMEZONE).isoformat(timespec="seconds"),
             ]
         )
+
+
+def load_attendance() -> list[dict[str, str]]:
+    """Load valid attendance rows for the monthly summary."""
+    if not DATA_FILE.exists():
+        return []
+
+    records: list[dict[str, str]] = []
+    with DATA_FILE.open("r", newline="", encoding="utf-8") as file:
+        for row in csv.DictReader(file):
+            try:
+                datetime.strptime(row.get("date", ""), "%Y-%m-%d")
+            except (TypeError, ValueError):
+                continue
+
+            normalized_status = STATUS_ALIASES.get(
+                row.get("status", ""), row.get("status", "")
+            )
+            if normalized_status not in STATUSES:
+                continue
+
+            row["status"] = normalized_status
+            records.append(row)
+
+    return records
 
 
 st.markdown(
@@ -259,6 +285,109 @@ st.markdown(
             margin-top: 1rem;
         }
 
+        [data-testid="stButton"] button {
+            width: 100%;
+            min-height: 48px;
+            margin-top: .8rem;
+            border: 1px solid rgba(91, 91, 214, .2);
+            border-radius: 13px;
+            color: var(--primary-dark);
+            font-weight: 700;
+            background: rgba(255, 255, 255, .78);
+            box-shadow: 0 9px 25px rgba(50, 59, 90, .07);
+            backdrop-filter: blur(12px);
+            transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+        }
+
+        [data-testid="stButton"] button:hover {
+            color: var(--primary-dark);
+            border-color: rgba(91, 91, 214, .48);
+            transform: translateY(-2px);
+            box-shadow: 0 13px 28px rgba(50, 59, 90, .11);
+        }
+
+        .summary-heading {
+            margin: 2rem 0 .25rem;
+            color: var(--ink);
+            font-family: "Manrope", sans-serif;
+            font-size: 1.55rem;
+            font-weight: 800;
+            letter-spacing: -.035em;
+        }
+
+        .summary-copy {
+            margin: 0 0 1rem;
+            color: var(--muted);
+            font-size: .9rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: .75rem;
+            margin-top: 1rem;
+        }
+
+        .summary-card {
+            position: relative;
+            overflow: hidden;
+            min-height: 118px;
+            padding: 1rem;
+            border: 1px solid rgba(255, 255, 255, .9);
+            border-radius: 17px;
+            background: rgba(255, 255, 255, .86);
+            box-shadow: 0 12px 30px rgba(50, 59, 90, .09);
+            backdrop-filter: blur(14px);
+        }
+
+        .summary-card::after {
+            content: "";
+            position: absolute;
+            width: 52px;
+            height: 52px;
+            right: -17px;
+            bottom: -17px;
+            border-radius: 999px;
+            background: var(--card-color);
+            opacity: .16;
+        }
+
+        .summary-dot {
+            display: block;
+            width: 9px;
+            height: 9px;
+            margin-bottom: .8rem;
+            border-radius: 999px;
+            background: var(--card-color);
+            box-shadow: 0 0 0 5px color-mix(in srgb, var(--card-color) 14%, transparent);
+        }
+
+        .summary-number {
+            color: var(--ink);
+            font-family: "Manrope", sans-serif;
+            font-size: 1.8rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .summary-label {
+            margin-top: .4rem;
+            color: var(--muted);
+            font-size: .78rem;
+            font-weight: 700;
+        }
+
+        .summary-total {
+            margin-top: .9rem;
+            padding: .8rem 1rem;
+            border: 1px solid rgba(91, 91, 214, .11);
+            border-radius: 13px;
+            color: #606a82;
+            font-size: .84rem;
+            text-align: center;
+            background: rgba(255, 255, 255, .58);
+        }
+
         .privacy-note {
             margin-top: 1.2rem;
             text-align: center;
@@ -270,6 +399,7 @@ st.markdown(
             [data-testid="stMainBlockContainer"] { padding: 2rem 1rem; }
             [data-testid="stForm"] { padding: 1.25rem 1.05rem 1.35rem; border-radius: 20px; }
             .hero-copy { margin-bottom: 1.4rem; }
+            .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -339,6 +469,86 @@ if submitted:
             icon="✅",
         )
         st.balloons()
+
+
+if "show_summary" not in st.session_state:
+    st.session_state.show_summary = False
+
+summary_button_label = (
+    "Hide monthly summary" if st.session_state.show_summary else "View monthly summary"
+)
+if st.button(summary_button_label, use_container_width=True):
+    st.session_state.show_summary = not st.session_state.show_summary
+
+
+if st.session_state.show_summary:
+    attendance_records = load_attendance()
+    available_months = sorted(
+        {record["date"][:7] for record in attendance_records}, reverse=True
+    )
+    if not available_months:
+        available_months = [today.strftime("%Y-%m")]
+
+    st.markdown(
+        """
+        <h2 class="summary-heading">Monthly summary</h2>
+        <p class="summary-copy">Choose a month to see the team's attendance breakdown.</p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    selected_month = st.selectbox(
+        "Month",
+        options=available_months,
+        format_func=lambda month: datetime.strptime(month, "%Y-%m").strftime("%B %Y"),
+        key="summary_month",
+    )
+
+    monthly_records = [
+        record for record in attendance_records if record["date"].startswith(selected_month)
+    ]
+    status_counts = {
+        status_name: sum(
+            record["status"] == status_name for record in monthly_records
+        )
+        for status_name in STATUSES
+    }
+
+    st.markdown(
+        f"""
+        <div class="summary-grid">
+            <div class="summary-card" style="--card-color: #30bca8;">
+                <span class="summary-dot"></span>
+                <div class="summary-number">{status_counts["Ontime"]}</div>
+                <div class="summary-label">Ontime</div>
+            </div>
+            <div class="summary-card" style="--card-color: #f4b95f;">
+                <span class="summary-dot"></span>
+                <div class="summary-number">{status_counts["Late"]}</div>
+                <div class="summary-label">Late</div>
+            </div>
+            <div class="summary-card" style="--card-color: #6e68df;">
+                <span class="summary-dot"></span>
+                <div class="summary-number">{status_counts["Halfday"]}</div>
+                <div class="summary-label">Halfday</div>
+            </div>
+            <div class="summary-card" style="--card-color: #ef7184;">
+                <span class="summary-dot"></span>
+                <div class="summary-number">{status_counts["Absent"]}</div>
+                <div class="summary-label">Absent</div>
+            </div>
+        </div>
+        <div class="summary-total">
+            <strong>{len(monthly_records)}</strong> total attendance
+            {"record" if len(monthly_records) == 1 else "records"} for
+            {datetime.strptime(selected_month, "%Y-%m").strftime("%B %Y")}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if not monthly_records:
+        st.info("No attendance has been submitted for this month yet.")
 
 
 st.markdown(
